@@ -6,8 +6,10 @@ const DATA = process.env.VMM_DATA || path.join(process.env.LOCALAPPDATA || os.ho
 fs.mkdirSync(DATA, { recursive: true });
 const RESTART = 75; // server.js esce con 75 quando ha appena applicato un aggiornamento
 let state = U.onStart(__dirname, DATA);
+// Antivirus come Norton controllano le connessioni con un proprio certificato: usa anche quelli di Windows.
+const CA = process.allowedNodeEnvironmentFlags.has('--use-system-ca') ? ['--use-system-ca'] : [];
 function run() {
-  const p = spawn(process.execPath, [path.join(__dirname, 'server.js')], { cwd: __dirname, stdio: 'inherit', windowsHide: true });
+  const p = spawn(process.execPath, [...CA, path.join(__dirname, 'server.js')], { cwd: __dirname, stdio: 'inherit', windowsHide: true });
   p.on('exit', code => {
     if (code === RESTART) { state = U.onStart(__dirname, DATA); return run(); }
     if (code && state === 'prova' && U.rollback(__dirname, DATA)) { state = 'indietro'; return run(); }
