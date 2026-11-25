@@ -5,6 +5,19 @@ const C = require('./core'); const { err } = C;
 
 const DATA = process.env.VMM_DATA || path.join(process.env.LOCALAPPDATA || os.homedir(), 'ValheimModManager');
 const PORT = +process.env.VMM_PORT || 47815, HEADLESS = !!process.env.VMM_HEADLESS;
+// L'app parte senza finestra: se si ferma per un errore lo si scrive su file e lo si mostra, invece di sparire in silenzio
+const errFile = () => path.join(fs.existsSync(DATA) ? DATA : os.tmpdir(), 'errore.txt');
+function logErr(e) { try { fs.appendFileSync(errFile(), new Date().toISOString() + ' ' + ((e && e.stack) || e) + '\n'); } catch {} }
+function fatal(e) {
+  logErr(e); console.error(e);
+  if (!HEADLESS) try {
+    execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', 'Add-Type -AssemblyName System.Windows.Forms; [void][System.Windows.Forms.MessageBox]::Show($env:VMM_MSG, "Valheim Mod Manager")'],
+      { env: { ...process.env, VMM_MSG: 'Il mod manager si è fermato per un errore:\n\n' + ((e && e.message) || e) + '\n\nDettagli nel file:\n' + errFile() }, windowsHide: true, stdio: 'ignore', timeout: 600000 });
+  } catch {}
+  process.exit(1);
+}
+process.on('uncaughtException', fatal);
+process.on('unhandledRejection', logErr);
 fs.mkdirSync(DATA, { recursive: true });
 
 function steamPath() {
@@ -204,6 +217,6 @@ const srv = http.createServer(async (req, res) => {
 srv.on('error', e => { if (e.code === 'EADDRINUSE') { const s = C.readJson(stateFile); if (s) openWindow(s.url); process.exit(0); } throw e; });
 srv.listen(PORT, '127.0.0.1', () => {
   const url = `http://127.0.0.1:${PORT}/?t=${token}`; fs.writeFileSync(stateFile, JSON.stringify({ url }));
-  if (!HEADLESS) { openWindow(url); bye = setTimeout(() => process.exit(0), 60000); }
+  if (!HEADLESS) { openWindow(url); bye = setTimeout(() => process.exit(0), 120000); } // al primo avvio Edge può essere lento
   console.log('Pronto');
 });

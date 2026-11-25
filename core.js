@@ -8,6 +8,8 @@ const META = '.vmm.json';
 const BEPINEX = 'denikson-BepInExPack_Valheim';
 const GUID_TO_TS = { 'com.jotunn.jotunn': 'ValheimModding-Jotunn' };
 const MAX_TOTAL = 2 * 1024 ** 3;
+const BEP_ROOT = /^(winhttp\.dll|doorstop_config\.ini|\.doorstop_version|start_(game|server)_bepinex\.sh)$/i;
+const GENERIC = /^(bepinex|plugins?|patchers|config|valheim|mods?|downloads?|files?|nuova cartella|new folder)$/i;
 const err = m => Object.assign(new Error(m), { user: true });
 const readJson = (f, d = null) => { try { return JSON.parse(fs.readFileSync(f, 'utf8').replace(/^\uFEFF/, '')); } catch { return d; } };
 
@@ -43,18 +45,27 @@ function readArchive(buf, fileName) {
   let files;
   if (buf.length > 4 && buf.readUInt16LE(0) === 0x4b50) files = readZip(buf);
   else if (/\.(7z|rar)$/i.test(fileName)) {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vmm-')); // tar di Windows (libarchive) legge rar e 7z
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vmm-')), ext = path.extname(fileName).toLowerCase();
     try {
-      const src = path.join(tmp, 'in.bin'), dir = path.join(tmp, 'x'); fs.writeFileSync(src, buf); fs.mkdirSync(dir);
-      try { execFileSync(path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe'), ['-xf', src, '-C', dir], { windowsHide: true, timeout: 120000, stdio: 'pipe' }); }
-      catch { throw err('Impossibile aprire questo rar/7z. Estrailo e ricomprimilo in zip.'); }
+      const src = path.join(tmp, 'in' + ext), dir = path.join(tmp, 'x'); fs.writeFileSync(src, buf);
+      // il tar di Windows 10 apre i rar ma non i 7z compressi con LZMA: in quel caso si prova 7-Zip o WinRAR, se installati
+      const pf = [process.env.ProgramFiles, process.env['ProgramFiles(x86)'], process.env.ProgramW6432].filter(Boolean), find = r => pf.map(p => path.join(p, r)).find(f => fs.existsSync(f));
+      const tools = [[path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe'), ['-xf', src, '-C', dir]]], z = find('7-Zip\\7z.exe'), w = find('WinRAR\\WinRAR.exe');
+      if (z) tools.push([z, ['x', '-y', '-pvmm', '-o' + dir, src]]);
+      if (w) tools.push([w, ['x', '-ibck', '-inul', '-y', '-p-', src, dir + path.sep]]);
+      let ok = false;
+      for (const [exe, args] of tools) {
+        fs.rmSync(dir, { recursive: true, force: true }); fs.mkdirSync(dir);
+        try { execFileSync(exe, args, { windowsHide: true, timeout: 120000, stdio: 'pipe' }); ok = true; break; } catch {}
+      }
+      if (!ok) throw err(`Non riesco ad aprire questo ${ext.slice(1)}. Installa 7-Zip (gratis, da 7-zip.org) e riprova, oppure estrai l'archivio e trascina qui la cartella.`);
       files = [];
       (function walk(d, rel) { for (const x of fs.readdirSync(d, { withFileTypes: true })) {
         const f = path.join(d, x.name), r = rel ? rel + '/' + x.name : x.name;
         if (x.isDirectory()) walk(f, r); else if (x.isFile()) { const data = fs.readFileSync(f); files.push({ name: r, size: data.length, data: () => data }); }
       } })(dir, '');
     } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
-  } else throw err('Formato non riconosciuto: servono zip, rar, 7z o dll.');
+  } else throw err(/\.zip$/i.test(fileName) ? 'Questo zip è danneggiato o non ha finito di scaricarsi: scaricalo di nuovo.' : 'Formato non riconosciuto: servono zip, rar, 7z o dll.');
   let total = 0;
   for (const f of files) {
     const seg = f.name.split('/');
@@ -118,10 +129,14 @@ function layout(files) {
   }
   const out = [], skipped = [];
   for (const x of list) {
-    const rel = x.rel.replace(/^bepinex\//i, ''), [head, ...rest] = rel.split('/'), h = head.toLowerCase();
-    if (rest.length && KINDS.includes(h)) out.push({ kind: h, rel: rest.join('/'), f: x.f });
+    let rel = x.rel; const lo = rel.toLowerCase(), bi = lo.startsWith('bepinex/') ? 0 : lo.indexOf('/bepinex/') + 1;
+    if (bi > 0 || lo.startsWith('bepinex/')) rel = rel.slice(bi + 8); // la cartella BepInEx può stare anche più in profondità
+    const [head, ...rest] = rel.split('/'), h = head.toLowerCase();
+    if (BEP_ROOT.test(path.posix.basename(rel)) || /(^|\/)doorstop_libs\//i.test(rel)) skipped.push(rel); // file del pacchetto BepInEx
+    else if (rest.length && KINDS.includes(h)) out.push({ kind: h, rel: rest.join('/'), f: x.f });
     else if (rest.length && h === 'config') out.push({ kind: 'config', rel: rest.join('/'), f: x.f });
     else if (rest.length && (h === 'core' || h === 'monomod')) skipped.push(rel);
+    else if (!rest.length && /\.cfg$/i.test(rel)) out.push({ kind: 'config', rel, f: x.f }); // un .cfg sciolto va in BepInEx/config
     else out.push({ kind: 'plugins', rel, f: x.f });
   }
   // plugins/Nome/... tutto dentro una sola cartella: la si toglie, la ricreiamo noi
@@ -227,10 +242,16 @@ class Manager {
     this.guard();
     if (!fs.existsSync(path.join(this.bep, 'core'))) throw err('Prima installa BepInEx.');
     const isDll = /\.dll$/i.test(fileName);
-    const files = isDll ? [{ name: path.basename(fileName), size: buf.length, data: () => buf }] : readArchive(buf, fileName);
-    if (files.some(f => /(^|\/)winhttp\.dll$/i.test(f.name)) && files.some(f => /BepInEx\/core\/BepInEx\.dll$/i.test(f.name))) throw err('Questo è BepInEx, non una mod: usa il pulsante BepInEx in alto.');
+    let files = isDll ? [{ name: path.basename(fileName), size: buf.length, data: () => buf }] : readArchive(buf, fileName);
+    for (let i = 0; i < 2 && !files.some(f => /\.dll$/i.test(f.name)); i++) { // uno zip dentro lo zip
+      const inner = files.filter(f => /\.(zip|rar|7z)$/i.test(f.name)); if (inner.length !== 1) break;
+      files = readArchive(inner[0].data(), inner[0].name);
+    }
+    const isBep = files.some(f => /(^|\/)winhttp\.dll$/i.test(f.name)) && files.some(f => /BepInEx\/core\/BepInEx\.dll$/i.test(f.name));
     if (!files.some(f => /\.dll$/i.test(f.name)) && files.some(f => /\.(fwl|db)$/i.test(f.name))) throw err('Questo è un mondo salvato, non una mod: non lo installo.');
     const { out, skipped } = layout(files), pn = parseName(fileName), plugins = [], warnings = [];
+    // un pacchetto con BepInEx e mod insieme: si installano le mod e si ignora BepInEx, che c'è già
+    if (isBep && !out.some(o => o.kind !== 'config' && /\.dll$/i.test(o.rel))) throw err('Questo è BepInEx, non una mod: usa il pulsante BepInEx in alto.');
     if (!out.length) throw err('Non ho trovato nulla da installare in questo archivio.');
     if (skipped.length) warnings.push(`${skipped.length} file per il cuore di BepInEx ignorati`);
     const data = out.map(o => ({ ...o, data: o.f.data() }));
@@ -241,7 +262,8 @@ class Manager {
     }
     if (!plugins.length && !extra.ts && !data.some(o => o.kind === 'patchers')) warnings.push('Nessun plugin BepInEx trovato dentro: controlla le istruzioni della mod');
     const guids = new Set(plugins.map(p => p.guid)), nexusId = extra.nexusId || pn.nexusId;
-    const entry = safeName(extra.ts || (pn.nexusId || isDll ? pn.name : man.name || pn.name));
+    const base = pn.nexusId || isDll ? pn.name : man.name || pn.name; // una cartella chiamata "plugins" o "BepInEx" prende il nome della mod
+    const entry = safeName(extra.ts || (GENERIC.test(base) && plugins[0] ? plugins[0].name : base));
     const old = this.scan().filter(m => (extra.ts && m.ts === extra.ts) || m.plugins.some(p => guids.has(p.guid)) || m.entry.toLowerCase() === entry.toLowerCase());
     for (const m of old) {
       const extraG = m.plugins.filter(p => !guids.has(p.guid));
@@ -250,6 +272,7 @@ class Manager {
     }
     const enabled = old.length ? old.some(m => m.enabled) : true;
     const stage = path.join(this.vmm, 'staging', Date.now().toString(36)), kinds = new Set(), cfgs = [];
+    const version = extra.version || (plugins[0] && plugins[0].version) || man.version_number || pn.version;
     try {
       for (const o of data) {
         if (o.kind === 'config') { cfgs.push(o); continue; }
@@ -257,7 +280,7 @@ class Manager {
         const f = path.join(stage, o.kind, entry, o.rel); fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, o.data);
       }
       if (!kinds.size) { kinds.add('plugins'); fs.mkdirSync(path.join(stage, 'plugins', entry), { recursive: true }); }
-      const meta = { name: extra.name || (pn.nexusId && plugins[0] ? plugins[0].name : undefined), version: extra.version || (plugins[0] && plugins[0].version) || man.version_number || pn.version, ts: extra.ts, nexusId, installed: new Date().toISOString() };
+      const meta = { name: extra.name || (pn.nexusId && plugins[0] ? plugins[0].name : undefined), version, ts: extra.ts, nexusId, installed: new Date().toISOString() };
       fs.writeFileSync(path.join(stage, [...kinds][0], entry, META), JSON.stringify(meta, null, 1));
       const trashed = [];
       try {
@@ -270,8 +293,9 @@ class Manager {
       for (const n of Object.keys(prof)) prof[n] = [...new Set(prof[n].map(e => gone.has(e) ? entry : e))];
       fs.writeFileSync(this.profFile(), JSON.stringify(prof, null, 1));
     }
-    for (const o of cfgs) { const f = path.join(this.bep, 'config', o.rel); if (!fs.existsSync(f)) { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, o.data); } }
-    return { name: extra.name || (plugins[0] && plugins[0].name) || entry, entry, replaced: old.map(m => m.name), warnings };
+    let newCfg = 0;
+    for (const o of cfgs) { const f = path.join(this.bep, 'config', o.rel); if (!fs.existsSync(f)) { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, o.data); newCfg++; } }
+    return { name: extra.name || (plugins[0] && plugins[0].name) || entry, entry, version: version || null, kinds: [...kinds], configs: newCfg, replaced: old.map(m => m.name), warnings };
   }
   installBepInEx(buf, version) {
     this.guard();
@@ -336,7 +360,11 @@ class Manager {
     const f = path.join(this.bep, 'LogOutput.log'); if (!fs.existsSync(f)) return null;
     const t = fs.readFileSync(f, 'utf8'), L = t.split(/\r?\n/);
     const bad = L.filter(l => /^\[(Error|Fatal|Warning)\s*:/.test(l));
-    return { date: fs.statSync(f).mtime, summary: (t.match(/Chainloader startup complete.*/) || [''])[0].replace('Chainloader startup complete ', ''), valheim: (t.match(/Valheim Version: (\S+)/) || [])[1],
+    // BepInEx 5 non scrive i totali: si contano le righe "Loading [...]" e quelle di plugin non caricati
+    const cnt = r => L.filter(l => r.test(l)).length, sm = t.match(/(\d+) loaded, (\d+) skipped, (\d+) failed/);
+    return { date: fs.statSync(f).mtime, summary: (t.match(/Chainloader startup complete.*/) || [''])[0].replace('Chainloader startup complete ', ''),
+      valheim: (t.match(/Valheim (?:version)?:?\s*l?-?(\d+\.\d+\.\d+)/i) || [])[1], // es. "Valheim version: l-0.219.16"
+      loaded: sm ? +sm[1] : Math.max(0, cnt(/\] Loading \[/) - cnt(/Error loading \[/)), failed: sm ? +sm[2] + +sm[3] : cnt(/(Error loading|Could not load|Skipping) \[/),
       errors: bad.filter(l => !l.startsWith('[Warning')).length, warnings: bad.filter(l => l.startsWith('[Warning')).length, lines: bad.slice(-200), tail: L.slice(-400).join('\n') };
   }
 }
