@@ -17,6 +17,7 @@ Chi gestisce il progetto la legge e la unisce. Non si scrive direttamente su `ma
 | `core.js` | Archivi, mod, profili, impostazioni, codice per gli amici |
 | `server.js` | Server locale, Thunderstore, cartella Download, avvio del gioco |
 | `index.html` | Tutta l'interfaccia |
+| `estrai.js` | Apre rar e 7z con un limite di spazio |
 | `update.js`, `start.js` | Aggiornamenti firmati e ritorno alla versione precedente |
 | `test.js`, `update.test.js` | Test su una copia finta del gioco |
 | `strumenti/` | Chiave e pubblicazione, solo per chi gestisce il progetto |

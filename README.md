@@ -17,4 +17,5 @@ Vedi [CONTRIBUIRE.md](CONTRIBUIRE.md).
 ## Sicurezza
 
 - L'app risponde solo sul tuo PC (`127.0.0.1`) e cambia una chiave a ogni avvio.
+- Gli aggiornamenti sono firmati: senza firma valida vengono rifiutati. Se una versione non parte, torna la precedente.
 - Le mod sono programmi veri: installa solo quelle di cui ti fidi.
