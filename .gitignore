@@ -1,5 +1,8 @@
 node.exe
+dist/
 *.zip
 *.log
-*.pem
+*.nuovo
 *.key
+*.pem
+!chiave-pubblica.pem

@@ -1,0 +1,7 @@
+{
+  "name": "valheim-mod-manager",
+  "version": "1.0.0",
+  "private": true,
+  "repository": "",
+  "scripts": { "test": "node --test" }
+}
