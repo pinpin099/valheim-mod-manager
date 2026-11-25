@@ -2,6 +2,6 @@
   "name": "valheim-mod-manager",
   "version": "1.0.0",
   "private": true,
-  "repository": "",
+  "repository": "pinpin099/valheim-mod-manager",
   "scripts": { "test": "node --test" }
 }
