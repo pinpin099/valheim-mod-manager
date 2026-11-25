@@ -8,7 +8,7 @@ echo.
 if not exist "%~dp0node.exe" (
   echo node.exe non trovato: estrai prima tutta la cartella dallo zip.
 ) else (
-  "%~dp0node.exe" server.js
+  "%~dp0node.exe" start.js
 )
 echo.
 pause

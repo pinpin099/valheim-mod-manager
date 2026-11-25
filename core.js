@@ -8,10 +8,14 @@ const META = '.vmm.json';
 const BEPINEX = 'denikson-BepInExPack_Valheim';
 const GUID_TO_TS = { 'com.jotunn.jotunn': 'ValheimModding-Jotunn' };
 const MAX_TOTAL = 2 * 1024 ** 3;
+const maxOut = n => Math.min(MAX_TOTAL, Math.max(100e6, n * 60)); // quanto può espandersi un archivio di n byte
 const BEP_ROOT = /^(winhttp\.dll|doorstop_config\.ini|\.doorstop_version|start_(game|server)_bepinex\.sh)$/i;
 const GENERIC = /^(bepinex|plugins?|patchers|config|valheim|mods?|downloads?|files?|nuova cartella|new folder)$/i;
 const err = m => Object.assign(new Error(m), { user: true });
 const readJson = (f, d = null) => { try { return JSON.parse(fs.readFileSync(f, 'utf8').replace(/^\uFEFF/, '')); } catch { return d; } };
+
+// per lo schermo e gli screenshot: via SteamID, nome utente di Windows e indirizzi IP
+const hide = s => s.replace(/\b7656119\d{10}\b/g, '[SteamID]').replace(/([\\/]Users[\\/]+)[^\\/\r\n:*?"<>|]+/gi, '$1[utente]').replace(/\b\d{1,3}(?:\.\d{1,3}){3}:\d{2,5}\b/g, '[IP]');
 
 /* ---------- archivi ---------- */
 function readZip(buf) {
@@ -56,7 +60,8 @@ function readArchive(buf, fileName) {
       let ok = false;
       for (const [exe, args] of tools) {
         fs.rmSync(dir, { recursive: true, force: true }); fs.mkdirSync(dir);
-        try { execFileSync(exe, args, { windowsHide: true, timeout: 120000, stdio: 'pipe' }); ok = true; break; } catch {}
+        try { execFileSync(process.execPath, [path.join(__dirname, 'estrai.js'), String(maxOut(buf.length)), dir, exe, ...args], { windowsHide: true, timeout: 120000, stdio: 'pipe' }); ok = true; break; }
+        catch (e) { if (e.status === 9) throw err('Archivio rifiutato: si espande troppo rispetto al suo peso.'); }
       }
       if (!ok) throw err(`Non riesco ad aprire questo ${ext.slice(1)}. Installa 7-Zip (gratis, da 7-zip.org) e riprova, oppure estrai l'archivio e trascina qui la cartella.`);
       files = [];
@@ -71,7 +76,7 @@ function readArchive(buf, fileName) {
     const seg = f.name.split('/');
     if (f.name.startsWith('/') || /[:\0<>"|?*]/.test(f.name) || seg.some(s => s === '..' || s === '.' || s === '' || /[. ]$/.test(s)))
       throw err('Archivio rifiutato: contiene un percorso non sicuro (' + f.name + ').');
-    if ((total += f.size) > MAX_TOTAL) throw err('Archivio troppo grande.');
+    if ((total += f.size) > maxOut(buf.length)) throw err('Archivio rifiutato: si espande troppo rispetto al suo peso.');
   }
   return files;
 }
@@ -189,7 +194,7 @@ class Manager {
       for (const f of files) { try { m.size += fs.statSync(f).size; if (/\.dll$/i.test(f)) { const i = this.dllInfo(f); m.plugins.push(...i.plugins); m.deps.push(...i.deps); } } catch {} }
       m.dlls = files.filter(f => /\.dll$/i.test(f)).length;
       const main = m.plugins[0];
-      m.ts = meta.ts || m.plugins.map(p => GUID_TO_TS[p.guid]).find(Boolean) || null;
+      m.ts = meta.ts || (meta.installed ? null : m.plugins.map(p => GUID_TO_TS[p.guid]).find(Boolean)) || null; // se l'abbiamo installata noi da un file, il nome che dichiara non basta
       m.nexusId = meta.nexusId || pn.nexusId || null;
       m.name = meta.name || (main && main.name) || man.name || pn.name;
       m.version = meta.version || (main && main.version) || man.version_number || pn.version || null;
@@ -270,6 +275,9 @@ class Manager {
       const same = (extra.ts && m.ts === extra.ts) || (nexusId && m.nexusId === nexusId);
       if (extraG.length && !same) throw err(`Conflitto: "${m.entry}" contiene anche ${extraG[0].name}. Rimuovila a mano prima.`);
     }
+    // una mod di origine nota viene sostituita solo da un file della stessa origine, altrimenti si chiede
+    const other = old.filter(m => (m.ts || m.nexusId) && !(extra.ts && m.ts === extra.ts) && !(nexusId && m.nexusId === nexusId));
+    if (other.length && !extra.confirm) throw Object.assign(err(`“${path.basename(fileName)}” prende il posto di ${other.map(m => `${m.name} ${m.version || ''} (${m.ts ? 'Thunderstore, ' + m.ts : 'Nexus'})`).join(', ')}, ma arriva da un'altra parte. Sostituiscila solo se ti fidi di questo file.`), { confirm: true });
     const enabled = old.length ? old.some(m => m.enabled) : true;
     const stage = path.join(this.vmm, 'staging', Date.now().toString(36)), kinds = new Set(), cfgs = [];
     const version = extra.version || (plugins[0] && plugins[0].version) || man.version_number || pn.version;
@@ -363,9 +371,9 @@ class Manager {
     // BepInEx 5 non scrive i totali: si contano le righe "Loading [...]" e quelle di plugin non caricati
     const cnt = r => L.filter(l => r.test(l)).length, sm = t.match(/(\d+) loaded, (\d+) skipped, (\d+) failed/);
     return { date: fs.statSync(f).mtime, summary: (t.match(/Chainloader startup complete.*/) || [''])[0].replace('Chainloader startup complete ', ''),
-      valheim: (t.match(/Valheim (?:version)?:?\s*l?-?(\d+\.\d+\.\d+)/i) || [])[1], // es. "Valheim version: l-0.219.16"
+      valheim: (t.match(/Valheim version:\s*(?:l-)?(\d+\.\d+\.\d+)/i) || [])[1], // es. "Valheim version: l-0.219.16"; non "BepInExPack Valheim version 5.4"
       loaded: sm ? +sm[1] : Math.max(0, cnt(/\] Loading \[/) - cnt(/Error loading \[/)), failed: sm ? +sm[2] + +sm[3] : cnt(/(Error loading|Could not load|Skipping) \[/),
-      errors: bad.filter(l => !l.startsWith('[Warning')).length, warnings: bad.filter(l => l.startsWith('[Warning')).length, lines: bad.slice(-200), tail: L.slice(-400).join('\n') };
+      errors: bad.filter(l => !l.startsWith('[Warning')).length, warnings: bad.filter(l => l.startsWith('[Warning')).length, lines: bad.slice(-200).map(hide), tail: hide(L.slice(-400).join('\n')) };
   }
 }
 /* ---------- condivisione ---------- */

@@ -3,7 +3,7 @@
 // Senza una firma valida fatta con la chiave di chi pubblica non viene scritto nulla.
 const fs = require('fs'), path = require('path'), crypto = require('crypto'), zlib = require('zlib');
 const APP = 'valheim-mod-manager', MAX = 4e6;
-const OK = /^[A-Za-z0-9][A-Za-z0-9 _-]*\.(js|json|html|css|txt|vbs|pem)$/; // solo file nella cartella dell'app, mai sottocartelle
+const OK = /^[A-Za-z0-9][A-Za-z0-9 ()_-]*\.(js|json|html|css|txt|vbs|cmd|pem)$/; // solo file nella cartella dell'app, mai sottocartelle
 const FIXED = new Set(['start.js', 'update.js', 'chiave-pubblica.pem']);   // avvio, controllo e chiave cambiano solo con uno zip nuovo
 const NEED = ['package.json', 'server.js', 'core.js', 'index.html'];
 const bad = m => Object.assign(new Error(m), { user: true });

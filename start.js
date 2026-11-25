@@ -1,17 +1,18 @@
 'use strict';
 // Avvio: se un aggiornamento non parte, rimette la versione precedente e riprova una volta.
-const path = require('path'), os = require('os'), fs = require('fs'), { spawn } = require('child_process');
+const path = require('path'), os = require('os'), fs = require('fs'), crypto = require('crypto'), { spawn } = require('child_process');
 const U = require('./update');
 const DATA = process.env.VMM_DATA || path.join(process.env.LOCALAPPDATA || os.homedir(), 'ValheimModManager');
 fs.mkdirSync(DATA, { recursive: true });
 const RESTART = 75; // server.js esce con 75 quando ha appena applicato un aggiornamento
-let state = U.onStart(__dirname, DATA);
+const TOKEN = crypto.randomBytes(24).toString('hex'); // resta uguale se riparte, così la finestra aperta si ricollega
+let state = U.onStart(__dirname, DATA), again = '';
 // Antivirus come Norton controllano le connessioni con un proprio certificato: usa anche quelli di Windows.
 const CA = process.allowedNodeEnvironmentFlags.has('--use-system-ca') ? ['--use-system-ca'] : [];
 function run() {
-  const p = spawn(process.execPath, [...CA, path.join(__dirname, 'server.js')], { cwd: __dirname, stdio: 'inherit', windowsHide: true });
+  const p = spawn(process.execPath, [...CA, path.join(__dirname, 'server.js')], { cwd: __dirname, stdio: 'inherit', windowsHide: true, env: { ...process.env, VMM_TOKEN: TOKEN, VMM_RESTART: again, VMM_TRIAL: state === 'prova' ? '1' : '' } });
   p.on('exit', code => {
-    if (code === RESTART) { state = U.onStart(__dirname, DATA); return run(); }
+    if (code === RESTART) { again = '1'; state = U.onStart(__dirname, DATA); return run(); }
     if (code && state === 'prova' && U.rollback(__dirname, DATA)) { state = 'indietro'; return run(); }
     process.exit(code || 0);
   });

@@ -87,3 +87,35 @@ test('codici malevoli', () => {
   const p = C.decodePack(C.encodePack({ v: 1, n: 5, m: [{ n: 'x', v: '../1', t: '../../evil', x: 'javascript:1', g: 'no' }, null] }));
   A.deepEqual(p.m[0], { n: 'x', v: '', t: '', x: 0, g: [] }); A.equal(p.m[1].n, 'Mod');
 });
+const { execFileSync } = require('child_process');
+const TAR = path.join(process.env.SystemRoot || 'C:\Windows', 'System32', 'tar.exe');
+test('un file di altra origine non sostituisce una mod nota senza conferma', () => {
+  const m = mk(), j = dll('com.jotunn.jotunn', '2.0.0'), bad = zip({ 'Innocua.dll': dll('com.jotunn.jotunn', '9.0.0') });
+  m.install(zip({ 'plugins/Jotunn.dll': j }), 'j.zip', { ts: 'ValheimModding-Jotunn', version: '2.0.0' });
+  for (const [b, n] of [[bad, 'Innocua.zip'], [dll('com.jotunn.jotunn', '9.0.0'), 'Jotunn.dll']]) A.throws(() => m.install(b, n), e => e.confirm && /Thunderstore/.test(e.message));
+  A.equal(m.scan()[0].version, '2.0.0'); A.equal(m.listTrash().length, 0);
+  m.install(zip({ 'plugins/Jotunn.dll': dll('com.jotunn.jotunn', '2.1.0') }), 'j.zip', { ts: 'ValheimModding-Jotunn', version: '2.1.0' }); // stessa origine: nessuna domanda
+  m.install(bad, 'Innocua.zip', { confirm: true }); const [x] = m.scan(); A.equal(x.version, '9.0.0'); A.equal(x.ts, null); A.equal(m.listTrash().length, 2);
+});
+test('stessa mod Nexus si aggiorna senza domande', () => {
+  const m = mk(); m.install(zip({ 'b.dll': dll('b', '1.0') }), 'B-77-1-0-1730469651.zip'); m.install(zip({ 'b.dll': dll('b', '1.1') }), 'B-77-1-1-1730469999.zip'); A.equal(m.scan()[0].version, '1.1');
+  A.throws(() => m.install(zip({ 'b.dll': dll('b', '1.2') }), 'x.zip'), e => e.confirm);
+});
+test('archivi bomba fermati', { skip: !fs.existsSync(TAR) }, () => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'vmmtest-')); fs.writeFileSync(path.join(d, 'z.dll'), Buffer.alloc(300e6));
+  execFileSync(TAR, ['--format', '7zip', '-cf', path.join(d, 'b.7z'), '-C', d, 'z.dll']);
+  A.throws(() => C.readArchive(fs.readFileSync(path.join(d, 'b.7z')), 'b.7z'), /si espande troppo/);
+  const z = zip({ 'a.dll': Buffer.alloc(150e6) }); A.throws(() => C.readArchive(z, 'a.zip'), /si espande troppo/);
+  fs.writeFileSync(path.join(d, 'ok.dll'), dll('ok', '1.0')); execFileSync(TAR, ['--format', '7zip', '-cf', path.join(d, 'ok.7z'), '-C', d, 'ok.dll']);
+  const m = mk(); m.install(fs.readFileSync(path.join(d, 'ok.7z')), 'ok.7z'); A.equal(m.scan()[0].name, 'N ok'); fs.rmSync(d, { recursive: true });
+});
+test('zip dentro lo zip, BepInEx in profondità, cfg sciolto, BepInEx nel pacchetto', () => {
+  const m = mk(); m.install(zip({ 'leggimi.txt': 'x', 'Mod.zip': zip({ 'Cartella/BepInEx/plugins/Foo/Foo.dll': dll('f', '1.0'), 'f.cfg': 'a=1', 'winhttp.dll': 'x', 'BepInEx/core/BepInEx.dll': 'x' }) }), 'x.zip');
+  A.ok(has(m, 'config/f.cfg')); A.equal(m.scan().length, 1); A.ok(!fs.existsSync(path.join(m.game, 'winhttp.dll'))); A.ok(!has(m, 'core/BepInEx.dll'));
+  A.throws(() => m.install(zip({ 'winhttp.dll': 'x', 'BepInEx/core/BepInEx.dll': 'x' }), 'b.zip'), /Questo è BepInEx/);
+  for (const n of ['a/BepInEx/../../x.dll', 'BepInEx/config/../../x.cfg']) A.throws(() => m.install(zip({ [n]: 'x' }), 'a.zip'), /non sicuro/);
+});
+test('registro: versione di Valheim e dati personali nascosti', () => {
+  const m = mk(); fs.writeFileSync(path.join(m.bep, 'LogOutput.log'), '[Message:   BepInEx] User is running BepInExPack Valheim version 5.4.2360\n[Info   :   BepInEx] Loading [A 1.0]\n[Message:   BepInEx] Valheim Version: 1.0.21\n[Error  : X] C:\\Users\\Mario Rossi\\a 76561198000000000 10.1.2.3:2456 C:/Users/Mario/b\n');
+  const l = m.log(); A.equal(l.valheim, '1.0.21'); A.equal(l.loaded, 1); A.ok(!/Mario|7656|10\.1/.test(l.tail + l.lines)); A.ok(l.lines[0].includes('[SteamID]'));
+});

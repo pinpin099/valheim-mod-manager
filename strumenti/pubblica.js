@@ -3,7 +3,7 @@
 // Non carica nulla: i due file si trascinano in una nuova Release su GitHub.
 const fs = require('fs'), path = require('path'), os = require('os'), crypto = require('crypto'), { execFileSync } = require('child_process');
 const U = require('../update'), ROOT = path.join(__dirname, '..'), DIST = path.join(ROOT, 'dist');
-const APP_FILES = ['package.json', 'start.js', 'update.js', 'chiave-pubblica.pem', 'server.js', 'core.js', 'index.html', 'LEGGIMI.txt', 'Avvia Mod Manager.vbs'];
+const APP_FILES = ['package.json', 'start.js', 'update.js', 'chiave-pubblica.pem', 'server.js', 'core.js', 'estrai.js', 'index.html', 'LEGGIMI.txt', 'LICENZA-NODE.txt', 'Avvia Mod Manager.vbs', 'Avvia Mod Manager (diagnostica).cmd'];
 
 // I file dell'app, com'è la cartella adesso. Se se ne aggiunge uno nuovo, va messo anche in APP_FILES.
 function build({ root, notes, key, date, node }) {
@@ -33,7 +33,6 @@ if (require.main === module) (async () => {
   U.verify(r.text, crypto.createPublicKey(fs.readFileSync(path.join(ROOT, 'chiave-pubblica.pem'))));
   fs.rmSync(DIST, { recursive: true, force: true }); const stage = path.join(DIST, 'tmp', 'Valheim Mod Manager'); fs.mkdirSync(stage, { recursive: true });
   for (const n of APP_FILES) fs.copyFileSync(path.join(ROOT, n), path.join(stage, n));
-  if (fs.existsSync(path.join(ROOT, 'LICENZA-NODE.txt'))) fs.copyFileSync(path.join(ROOT, 'LICENZA-NODE.txt'), path.join(stage, 'LICENZA-NODE.txt'));
   fs.copyFileSync(process.execPath, path.join(stage, 'node.exe'));
   const zip = path.join(DIST, 'Valheim-Mod-Manager.zip');
   execFileSync(path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe'), ['-a', '-cf', zip, '-C', path.join(DIST, 'tmp'), 'Valheim Mod Manager']);
