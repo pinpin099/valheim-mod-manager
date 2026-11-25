@@ -1,0 +1,11 @@
+VALHEIM MOD MANAGER
+
+1. Estrai tutta la cartella dallo zip (per esempio sul Desktop). Non avviarlo da dentro lo zip.
+2. Doppio clic su "Avvia Mod Manager". Se Windows chiede conferma, scegli Apri.
+3. Se compare "Per usare le mod serve BepInEx", premi Installa BepInEx.
+4. Vai in "Con gli amici", incolla il codice che ti hanno mandato e premi Controlla.
+5. Premi "Prepara le mie mod". Quelle di Nexus vanno scaricate a mano dal pulsante Apri Nexus,
+   poi installate da "Da Nexus".
+6. Quando sono tutte a posto, premi Gioca.
+
+Serve Windows 64 bit e Valheim su Steam. Include Node.js (licenza MIT, nodejs.org).
