@@ -8,4 +8,26 @@ VALHEIM MOD MANAGER
    poi installate da "Da Nexus".
 6. Quando sono tutte a posto, premi Gioca.
 
+INSTALLARE UNA MOD DA FILE
+- Apri "Installa da file" e trascina lo zip della mod nel riquadro (vanno bene anche rar, 7z, dll
+  o una cartella gia' estratta). Puoi anche trascinarla in qualsiasi punto della finestra.
+- Il mod manager mette ogni file nella cartella giusta di BepInEx: non serve estrarre niente a mano.
+- Per i 7z, se non si aprono, installa 7-Zip (gratis, 7-zip.org) oppure estrai e trascina la cartella.
+- Anche gli amici devono installare lo stesso file: lascia al file il nome originale di Nexus.
+
+GIOCARE INSIEME
+- Tutti devono avere le stesse mod e le stesse versioni: in "Con gli amici" ogni mod deve dire "A posto".
+- Chi ospita apre Valheim con Gioca, sceglie il mondo e spunta "Avvia server" prima di entrare.
+- Gli altri aprono Valheim con Gioca e si uniscono dagli amici di Steam o da "Unisciti" nel gioco.
+- Se chi organizza cambia le mod, manda un codice nuovo: incollalo e premi di nuovo "Prepara le mie mod".
+- Se il gioco non parte o dice che le versioni non coincidono, apri la pagina Registro.
+
+SE NON SI APRE
+- Fai doppio clic su "Avvia Mod Manager (diagnostica)": si apre una finestra nera che mostra l'errore.
+  Fai una foto e mandala a chi ti ha dato l'app.
+
+PER CHI ORGANIZZA
+- Lo zip pesa circa 35 MB: su Discord non passa, mandalo con Google Drive, WeTransfer o simili.
+- Il tuo codice lo trovi in "Con gli amici", riquadro "Manda le tue mod", pulsante Copia codice.
+
 Serve Windows 64 bit e Valheim su Steam. Include Node.js (licenza MIT, nodejs.org).
