@@ -28,7 +28,8 @@ if (require.main === module) (async () => {
   execFileSync(process.execPath, ['--test'], { cwd: ROOT, stdio: 'ignore' }); console.log('Test a posto.');
   const { ask } = require('./chiedi'), priv = path.join(os.homedir(), '.valheim-mod-manager', 'chiave-privata.pem');
   if (!fs.existsSync(priv)) throw Error('Manca la chiave: node strumenti/chiave.js');
-  let key; try { key = crypto.createPrivateKey({ key: fs.readFileSync(priv), passphrase: await ask('Password della chiave: ') }); } catch { throw Error('Password sbagliata.'); }
+  const pass = await ask('Password della chiave: ');
+  let key; try { key = crypto.createPrivateKey({ key: fs.readFileSync(priv), passphrase: pass }); } catch { throw Error('Password sbagliata.'); }
   const r = build({ root: ROOT, notes, key, date: new Date().toISOString().slice(0, 10), node: '22.0.0' });
   U.verify(r.text, crypto.createPublicKey(fs.readFileSync(path.join(ROOT, 'chiave-pubblica.pem'))));
   fs.rmSync(DIST, { recursive: true, force: true }); const stage = path.join(DIST, 'tmp', 'Valheim Mod Manager'); fs.mkdirSync(stage, { recursive: true });
